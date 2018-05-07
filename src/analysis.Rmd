@@ -1,0 +1,99 @@
+---
+title: "aliens"
+author: "Carmen"
+date: "5/7/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE, echo=FALSE}
+suppressWarnings(library(tidyverse))
+z_theme <- function(base_size) {
+  library(RColorBrewer)
+  # Generate the colors for the chart procedurally with RColorBrewer
+  palette <- brewer.pal("Greys", n=9)
+  color.background = palette[2]
+  color.grid.major = palette[3]
+  color.axis.text = palette[7]
+  color.axis.title = palette[7]
+  color.title = palette[8]
+  # Begin construction of chart
+  theme_bw(base_size=20) +
+    # Set the entire chart region to a light gray color
+    theme(panel.background=element_rect(fill=color.background, color=color.background)) +
+    theme(plot.background=element_rect(fill=color.background, color=color.background)) +
+    theme(panel.border=element_rect(color=color.background)) +
+    # Format the grid
+    theme(panel.grid.major=element_line(color=color.grid.major,size=.25)) +
+    theme(panel.grid.minor=element_blank()) +
+    theme(axis.ticks=element_blank()) +
+    # Format the legend, but hide by default
+    theme(legend.position="none") +
+    theme(legend.background = element_rect(fill=color.background)) +
+    theme(legend.text = element_text(size=7,color=color.axis.title)) +
+    # Set title and axis labels, and format these and tick marks
+    theme(plot.title=element_text(color=color.title, size=20, vjust=1.25)) +
+    theme(axis.text.x=element_text(size=7,color=color.axis.text)) +
+    theme(axis.text.y=element_text(size=7,color=color.axis.text)) +
+    theme(axis.title.x=element_text(size=10,color=color.axis.title, vjust=2)) +
+    theme(axis.title.y=element_text(size=10,color=color.axis.title, vjust=1.25))
+}
+
+library(dplyr)
+library(stringr)
+library(ggplot2)
+library(ggjoy)
+library(maps)
+library(scales)
+setwd("/Users/carmenlouise/Documents/aliens/src")
+df <- read_delim("output.txt", delim = "\t", col_names = FALSE, guess_max = 100000)
+pop <- read.csv("pops.csv", stringsAsFactors = FALSE)
+pop$state <- tolower(pop$state)
+
+df <- filter(df, !grepl("/", df$X3))
+colnames(df) <- c("date", "city", "stateabb", "shape", "duration", "summary", "posted")
+
+df$date <- as.POSIXct(df$date, format = "%m/%d/%y %H:%M", tz = "UTC")
+df$posted <- as.POSIXct(df$posted, format = "%m/%d/%y", tz = "UTC")
+
+state.info <- as.data.frame(cbind(state.abb, state.area, state.name))
+df <- merge(df, state.info, by.x = 'stateabb', by.y = 'state.abb', all.x = TRUE)
+df$state.name <- tolower(df$state.name)
+df$state.area <- as.numeric(as.character(df$state.area))
+
+df$Year <- format(df$date, "%Y")
+df$Month <- format(df$date, "%B")
+df$Day <- format(df$date, "%A")
+df$Hour <- format(df$date, "%H")
+
+states <- map_data("state")
+states <- merge(states, df %>% group_by(state.name, state.area, stateabb) %>% tally(), by.x = "region", by.y = "state.name", all.x = TRUE)
+states <- merge(states, pop, by.x = "region", by.y = "state", all.x = TRUE)
+states <- states[order(states$order),]
+states$reports <- (states$n/states$population)
+
+```
+
+```{r shape, include=TRUE, echo=FALSE, dpi=600}
+ggplot(df %>% group_by(shape) %>% tally() %>% arrange(desc(n)) %>% top_n(20, n), aes(x = reorder(shape, n, sum), y = n, fill = shape)) + 
+  geom_bar(stat="identity") + z_theme() + xlab("Shape of UFO") + ylab("Number of Documented Reports") + scale_y_continuous(label=comma) + coord_flip() + ggtitle("Shape of UFO")
+```
+
+
+```{r states, include=TRUE, echo=FALSE, dpi=600}
+area <- states %>% select(region, population, state.area, stateabb, reports) %>% filter(!is.na(state.area)) %>% unique()
+
+ggplot(area, aes(x=reorder(stateabb, reports, sum), y = reports)) + geom_point() + 
+  geom_segment(aes(y = mean(area$reports), x = stateabb, yend = reports, xend = stateabb), color = "black") + coord_flip() + 
+  xlab("State") + ylab("Percent of Population that has seen UFO") + geom_hline(yintercept=mean(area$reports)) + 
+  scale_y_continuous(labels=percent) + z_theme() + ggtitle("UFO Reports as a Percentage of Population")
+```
+
+```{r hour, include=TRUE, echo=FALSE, dpi=600}
+hourofday <- df %>% group_by(Month, Hour) %>% filter(!is.na(Hour)) %>% tally()
+ggplot(hourofday, aes(x=Hour, y=n, group=Month, color=Month)) + geom_line() + z_theme()
+```
+
+
+```{r area, include=TRUE, echo=FALSE, dpi=600}
+ggplot(area, aes(x = population/state.area, y = reports)) + geom_point(size=2) + z_theme() + scale_y_continuous(labels = percent)
+```
